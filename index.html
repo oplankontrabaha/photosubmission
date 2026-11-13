@@ -332,6 +332,7 @@ button,input{font:inherit;color:inherit}
 .stage,.duo,.leaf{display:contents}
 .leaf-l{display:none}
 .duo-shadow{display:none}
+#edge{display:none}
 
 @media (min-width:1024px){
 
@@ -361,9 +362,12 @@ button,input{font:inherit;color:inherit}
     --t-meta:calc(var(--u) * 2.5);   --t-more:calc(var(--u) * 4);
 
     --bezel:calc(var(--u) * 1.406);   /* 25% thinner than the previous 1.875 */
-    --thick:calc(var(--u) * 2.21);    /* 35% thinner than the previous 3.4 */
-    --r-out:calc(var(--u) * 7);
+    --thick:calc(var(--u) * 2.8);     /* the slab, as on the ESS device */
+    --r-out:calc(var(--u) * 6.2);     /* outer corner, as on the ESS device */
     --r-spine:0px;   /* the inner edge has no frame at all */
+    /* black glass frame round each screen: it starts a little inside the
+       polished edge (drawn with WebGL) and runs a little under the screen */
+    --rd:calc(var(--u) * 1.03);--bw:calc(var(--u) * .676);--ro:calc(var(--u) * 5.17);
 
     --paper:#f7f9fc;
     --stage-bg:#eef1f5;
@@ -407,48 +411,25 @@ button,input{font:inherit;color:inherit}
     /* folded, only the right half is on screen, so the whole device slides
        a quarter of its width right to sit centred */
     transform:translateX(var(--duo-shift,-25%));
-    transition:transform var(--fold-ms,1500ms) var(--ease-hinge);
+    will-change:transform;
   }
+  /* no WebGL: the black frame runs right out to the outline instead */
+  html.nogl{--rd:0px;--bw:calc(var(--bezel) + var(--u) * .3);--ro:var(--r-out)}
 
-  /* the shadow is its own flat layer: a 3D-transformed element cannot cast a
-     believable one, and this way it can spread as the device opens.
-
-     Three falloffs rather than one, because that is what a real object casts:
-     a wide ambient pool, the body's own cast shadow, and a short dark band
-     where it meets the surface. The last one is small and easy to leave out,
-     and it is the one that makes the thing look like it has weight.
-
-     The box itself is now only the frame that moves with the fold — each
-     falloff is a layer inside it, so they can have their own blur. A filter
-     on the box would blur its children too and the contact band would smear
-     into the rest. */
+  /* THE FLOOR SHADOW. Pre-softened gradients, so there is no blur filter to
+     recompute, and it is stretched with a transform as the device opens, so
+     no frame of the fold has to lay anything out or repaint it. */
   .duo-shadow{
-    display:block;position:absolute;top:4%;bottom:-2%;
-    left:var(--sh-left,50%);right:var(--sh-right,0%);
-    transform:translateZ(-60px);
-    transition:left var(--fold-ms,1500ms) var(--ease-fold),
-               right var(--fold-ms,1500ms) var(--ease-fold),
-               opacity var(--fold-ms,1500ms) var(--ease-fold);
+    display:block;position:absolute;top:-6%;bottom:-14%;left:0;right:0;
+    transform-origin:100% 50%;transform:translateZ(-60px) scaleX(.5);
+    will-change:transform;
   }
-  /* ambient and cast together: both are wide, so one blur serves both.
-     The blur is in --u (a hundredth of the device) rather than pixels, so the
-     shadow keeps its proportions on a 13in laptop and on a 27in monitor. */
   .duo-shadow::before{
-    content:"";position:absolute;left:-10%;right:-10%;top:0%;bottom:-17%;
-    border-radius:50%/14%;
+    content:"";position:absolute;left:-26%;right:-26%;top:0;bottom:-36%;
     background:
-      radial-gradient(57% 47% at 50% 54%,rgba(8,16,28,.50),rgba(8,16,28,0) 72%),
-      radial-gradient(78% 66% at 50% 58%,rgba(8,16,28,.28),rgba(8,16,28,0) 78%);
-    filter:blur(calc(var(--u,6px) * 4.95));
+      radial-gradient(46% 38% at 50% 54%,rgba(8,16,28,.44),rgba(8,16,28,.2) 48%,rgba(8,16,28,.06) 78%,rgba(8,16,28,0) 100%),
+      radial-gradient(49% 43% at 50% 55%,rgba(8,16,28,.2),rgba(8,16,28,.07) 60%,rgba(8,16,28,0) 100%);
   }
-  /* contact: short, tight to the base, and darker than everything above it */
-  .duo-shadow::after{
-    content:"";position:absolute;left:4%;right:4%;top:87%;bottom:-6%;
-    border-radius:50%/50%;
-    background:radial-gradient(50% 50% at 50% 44%,rgba(5,11,21,.62),rgba(5,11,21,0) 70%);
-    filter:blur(calc(var(--u,6px) * 1.65));
-  }
-
   /* THE FRAME, in two states.
      Opened, it runs around the outside only: each half's screen reaches the
      hinge flush, so the two meet with no metal between them and read as one
@@ -458,8 +439,6 @@ button,input{font:inherit;color:inherit}
   .leaf{
     position:absolute;top:0;width:50%;height:100%;display:block;
     transform-style:preserve-3d;
-    background:var(--rail);
-    transition:border-radius var(--fold-ms,1500ms) var(--ease-hinge);
   }
   .leaf-r{left:50%;border-radius:0 var(--r-out) var(--r-out) 0}
 
@@ -478,79 +457,22 @@ button,input{font:inherit;color:inherit}
      Which is why there is no .shut override here: one profile, two readings
      of it. */
 
-  /* ---------- the thickness of the leaf ----------
-     The swinging leaf is a slab, not a sheet. Its screen sits on the front
-     plane, its cover on the back plane (--thick behind it), and a metal band
-     closes the gap around the FREE edge: the edge opposite the hinge, the one
-     that lifts toward you as it opens.
-
-       .plate-back   the back of the slab, so the cover has a rim behind it
-       .ws-main      the straight part of the band
-       .ws (corners) built by buildRim() in script, following the rounded corners
-
-     Every piece hides its back face, so the band only shows while it is
-     actually turned toward you: it comes up as the leaf lifts, is full face-on
-     at 90deg, and is gone again once the device is flat. */
-  .plate-back{
-    position:absolute;inset:0;border-radius:inherit;background:var(--rail);
-    transform:translateZ(calc(var(--thick) * -1 + .6px));
-    pointer-events:none;
-  }
-  .leaf-l>.ws{
-    position:absolute;pointer-events:none;
-    -webkit-backface-visibility:hidden;backface-visibility:hidden;
-    /* Every facet of the rim is one slice of a single machined surface,
-       sampled at its own leading and trailing edge — one opaque gradient, so
-       neighbours agree at every joint and nothing repeats or double-paints
-       inside a facet. That is what stops the fan reading as a row of raised
-       buttons. */
-    background:linear-gradient(90deg,var(--met-a,#0a0d12),var(--met-b,#171b21));
-    transform-origin:50% 50%;
-    /* AT REST THE EDGE IS NOT THERE.
-       A slab seen face-on shows none of its side, and the rim only has a job
-       while the device is actually turning. Left painted at rest it sat as a
-       dark ring just inside the rail — a different metal from the rail's own,
-       stopping dead wherever the band ran out, which is the cut at each end
-       of the corner. It now rides in with the fold and leaves with it. */
-    opacity:0;
-  }
-  .duo.folding .leaf-l>.ws{
-    animation:rimShow var(--fold-ms,1500ms) var(--ease-hinge) both;
-  }
-  @keyframes rimShow{
-    0%{opacity:0}  10%{opacity:1}  90%{opacity:1}  100%{opacity:0}
-  }
-  /* The straight run of the rounded side. --rim-inset hands the last stretch
-     at each end over to the corner, where the same profile carries on round
-     the outline. */
-  .leaf-l>.ws-side{
-    left:0;top:var(--rim-inset);bottom:var(--rim-inset);
-    overflow:hidden;                    /* keeps the climbing gloss on the band */
-  }
-  /* the outer edge is rounded at top and bottom whichever way the device is
-     sitting, so the rim's corner pieces are always in play */
-  .leaf-l{--rim-inset:var(--r-out)}
-  /* THE GLOSS ON THE EDGE.
-     A reflection sitting low on the band, climbing it as the device opens.
-     It is driven by the fold itself and shares its clock and its easing, so
-     it tracks the hinge exactly rather than drifting against it on a loop of
-     its own. Parked below the band and invisible when nothing is turning. */
-  .leaf-l>.ws-main::after{
-    content:"";position:absolute;left:0;right:0;height:34%;
-    background:linear-gradient(180deg,
-      transparent,rgba(255,255,255,.10) 22%,rgba(255,255,255,.52) 50%,
-      rgba(255,255,255,.10) 78%,transparent);
-    transform:translateY(300%);opacity:0;
-  }
-  .duo.folding .leaf-l>.ws-main::after{
-    animation:glossClimb var(--fold-ms,1500ms) var(--ease-hinge) both;
-  }
-  @keyframes glossClimb{
-    0%  {transform:translateY(290%);opacity:0}
-    14% {opacity:1}
-    86% {opacity:1}
-    100%{transform:translateY(-160%);opacity:0}
-  }
+  /* ---------- BEZELS: black glass frames (from the ESS device) ----------
+     Each screen sits in a black glass frame. A frame is only ever a ring
+     (drawn with borders), never a panel under a screen, so the two can never
+     swap places at steep angles. The polished edge outside it is drawn with
+     WebGL on the #edge canvas.
+       .p2  front of the swinging leaf, round the briefing panel
+       .p1  back of the swinging leaf, round the cover (--thick behind)
+       .pr  the fixed leaf, round the chat */
+  .plate{position:absolute;border-style:solid;border-color:#060708;pointer-events:none}
+  .leaf-l .plate{-webkit-backface-visibility:hidden;backface-visibility:hidden}
+  .plate.p2{left:var(--rd);top:var(--rd);bottom:var(--rd);right:-1px;
+    border-width:var(--bw) 0 var(--bw) var(--bw);border-radius:var(--ro) 0 0 var(--ro)}
+  .plate.p1{inset:var(--rd);border-width:var(--bw);border-radius:0 var(--ro) var(--ro) 0;
+    transform:rotateY(180deg) translateZ(var(--thick))}
+  .plate.pr{left:0;top:var(--rd);bottom:var(--rd);right:var(--rd);
+    border-width:var(--bw) var(--bw) var(--bw) 0;border-radius:0 var(--ro) var(--ro) 0}
 
   /* Open, the lift only has to break the z-order tie at the join, and any
      positive value does that. A whole pixel against the 3200px perspective
@@ -572,8 +494,7 @@ button,input{font:inherit;color:inherit}
        swings over to the left, the way a cover actually opens. Negative sends
        it dipping away behind the device, which reads as the back opening. */
     transform:translateZ(var(--lift,2px)) rotateY(var(--fold,180deg));
-    transition:transform var(--fold-ms,1500ms) var(--ease-hinge),
-               border-radius var(--fold-ms,1500ms) var(--ease-hinge);
+    will-change:transform;
   }
 
   /* Each face is its own compositing layer (backface-visibility promotes it),
@@ -600,16 +521,6 @@ button,input{font:inherit;color:inherit}
   .leaf-r .face{
     inset:var(--bezel) var(--bezel) var(--bezel) 0;
     border-radius:0 calc(var(--r-out) - var(--bezel)) calc(var(--r-out) - var(--bezel)) 0;
-    transition:inset var(--fold-ms,1500ms) var(--ease-hinge),
-               border-radius var(--fold-ms,1500ms) var(--ease-hinge);
-  }
-  /* Shut, this half is hidden behind the cover — but only if it keeps within
-     the closed phone's rounded rail. Flush at the hinge its square corner
-     would poke out past the curve, showing a sliver of the chat behind the
-     cover. So it closes up with the frame and reaches the hinge as it opens. */
-  .duo.shut .leaf-r .face{
-    inset:var(--bezel);
-    border-radius:calc(var(--r-out) - var(--bezel));
   }
   .leaf .face-inner{transform:translateZ(.4px)}
   /* The cover is the leaf's back, so it carries its own half-turn — which
@@ -634,154 +545,34 @@ button,input{font:inherit;color:inherit}
   .face>*{border-radius:inherit}
   .screen,.pane-dim,.cover-sign{border-radius:inherit;overflow:hidden}
 
-  /* the screen going dark, and coming up. One fades out exactly as the other
-     fades in, over the same clock, so they cross as the hinge reaches flat. */
-  /* THE FOCUS PULL.
-     The hinge travels 0-180° in 1500ms on a curve symmetric about its
-     midpoint, so 90° falls exactly at 750ms and each half of the fold gets
-     half the clock.
+  /* ---------- BLUR AND BRIGHTNESS WHILE FOLDING (from the ESS device) ----------
+     Script turns the hinge one frame at a time and sets these from the exact
+     angle on that same frame, so they can never fall behind the fold:
+       .fsb   three blurred copies of the screen (light, medium, heavy), each
+              masked so the blur is strongest at the outer edge
+       .fsg   darkness that deepens from the hinge toward the outer edge
+       .fsd   darkness over the whole screen
+     Only their opacity changes per frame, which the graphics chip does on its
+     own. The cover is completely dark by 90°; the panel inside is dark at 90°
+     and comes up to full brightness at 180°. */
+  .leaf-l .face-cover{--fdir:to right}   /* hinge on the left, outer edge on the right */
+  .leaf-l .face-inner{--fdir:to left}    /* hinge on the right, outer edge on the left */
+  .fsb{position:absolute;inset:0;z-index:20;pointer-events:none;overflow:hidden;border-radius:inherit;
+    opacity:0;will-change:opacity}
+  .fsb>.screen{pointer-events:none}
+  .fsb.l0{-webkit-mask-image:linear-gradient(var(--fdir),rgba(0,0,0,.55),#000 45%);mask-image:linear-gradient(var(--fdir),rgba(0,0,0,.55),#000 45%)}
+  .fsb.l1{-webkit-mask-image:linear-gradient(var(--fdir),rgba(0,0,0,.25),#000 70%);mask-image:linear-gradient(var(--fdir),rgba(0,0,0,.25),#000 70%)}
+  .fsb.l2{-webkit-mask-image:linear-gradient(var(--fdir),transparent 15%,#000 95%);mask-image:linear-gradient(var(--fdir),transparent 15%,#000 95%)}
+  .fsg,.fsd{position:absolute;inset:0;z-index:45;pointer-events:none;border-radius:inherit;opacity:0;will-change:opacity}
+  .fsg{background:linear-gradient(var(--fdir),rgba(0,0,0,0),#000)}
+  .fsd{background:#000}
 
-     The blur is not applied flat across the screen — it travels. A sheet of
-     backdrop blur sits over each face, masked so that a soft front sweeps
-     sideways across it:
+  /* the polished edge, drawn over the device from the same 3D numbers */
+  #edge{display:block;position:fixed;left:0;top:0;width:100%;height:100%;z-index:1;pointer-events:none}
 
-       part A   the cover goes soft from its RIGHT side inward, and is blurred
-                right across by the time the hinge reaches 90°
-       part B   the panel starts fully soft and clears from its RIGHT side
-                outward, until it is clear all the way across at flat
-
-     --sweep is registered above so it can actually interpolate; unregistered
-     custom properties are token streams and would snap instead of travel. */
-  /* A RAMP OF FOCUS, NOT AN EDGE.
-     One blur layer behind a soft-edged mask still reads as a line: the mask
-     only varies the OPACITY of a uniformly blurred sheet, so what the eye
-     finds is the mask's edge, not a change of focus. Four layers instead,
-     each with a larger radius and each masked to a band that overlaps its
-     neighbour, so focus falls off continuously from one side to the other
-     and there is no boundary to find. What travels during the fold is the
-     whole ramp, not a front.
-
-     Stacked backdrop filters compound where they overlap — that is part of
-     what makes the falloff smooth — so the four radii reach about 20px
-     together rather than the 16 of the last layer alone.
-
-       part A   the cover softens from its RIGHT side inward, fully soft by 90°
-       part B   the panel starts fully soft and clears from its RIGHT outward
-
-     --sweep is registered above so it can interpolate; unregistered custom
-     properties are token streams and would snap instead of travel. */
-  /* A RAMP OF FOCUS, NOT AN EDGE.
-     One blur layer behind a soft-edged mask still reads as a line: the mask
-     only varies the OPACITY of a uniformly blurred sheet, so what the eye
-     finds is the mask's edge, not a change of focus. Eight layers instead,
-     each with a larger radius and each masked to a band overlapping its
-     neighbour, so focus falls off continuously from one side to the other
-     and there is no boundary to find anywhere. What travels during the fold
-     is the whole ramp, not a front.
-
-     Stacked backdrop filters compound where they overlap — that is part of
-     what makes the falloff smooth — so the eight radii together reach about
-     20px rather than the 13 of the last layer alone.
-
-       part A   the cover softens from its RIGHT side inward, fully soft at 90°
-       part B   the panel starts fully soft and clears from its RIGHT outward
-
-     --sweep is registered above so it can interpolate; unregistered custom
-     properties are token streams and would snap instead of travel. */
-  .blur-sweep{
-    position:absolute;inset:0;z-index:40;pointer-events:none;
-    opacity:0;
-    --sweep:150%;     /* where the ramp sits, as % of the width from the left */
-  }
-  /* THE RAMP IS SIZED BY THE DEVICE, NOT BY THE SCREEN.
-     The bands each span a percentage of the pane, but these radii were fixed
-     pixels, so on a smaller screen the same blur smeared across a larger
-     share of its own band and the eight steps ran together. Expressed in --u
-     — the device's own unit, as the rest of the layout already is — the ramp
-     keeps its proportions from a phone to a 32-inch monitor. */
-  .bs1{-webkit-backdrop-filter:blur(calc(var(--u) * 0.1157));backdrop-filter:blur(calc(var(--u) * 0.1157))}
-  .bs2{-webkit-backdrop-filter:blur(calc(var(--u) * 0.2315));backdrop-filter:blur(calc(var(--u) * 0.2315))}
-  .bs3{-webkit-backdrop-filter:blur(calc(var(--u) * 0.3472));backdrop-filter:blur(calc(var(--u) * 0.3472))}
-  .bs4{-webkit-backdrop-filter:blur(calc(var(--u) * 0.5208));backdrop-filter:blur(calc(var(--u) * 0.5208))}
-  .bs5{-webkit-backdrop-filter:blur(calc(var(--u) * 0.6944));backdrop-filter:blur(calc(var(--u) * 0.6944))}
-  .bs6{-webkit-backdrop-filter:blur(calc(var(--u) * 0.9259));backdrop-filter:blur(calc(var(--u) * 0.9259))}
-  .bs7{-webkit-backdrop-filter:blur(calc(var(--u) * 1.1574));backdrop-filter:blur(calc(var(--u) * 1.1574))}
-  .bs8{-webkit-backdrop-filter:blur(calc(var(--u) * 1.5046));backdrop-filter:blur(calc(var(--u) * 1.5046))}
-
-  /* the cover: sharp to the left of the ramp, soft to the right */
-  .face-cover .bs1{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 26%),#000 calc(var(--sweep) - 6%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 26%),#000 calc(var(--sweep) - 6%))}
-  .face-cover .bs2{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 19%),#000 calc(var(--sweep) + 1%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 19%),#000 calc(var(--sweep) + 1%))}
-  .face-cover .bs3{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 12%),#000 calc(var(--sweep) + 8%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 12%),#000 calc(var(--sweep) + 8%))}
-  .face-cover .bs4{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 5%),#000 calc(var(--sweep) + 15%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) - 5%),#000 calc(var(--sweep) + 15%))}
-  .face-cover .bs5{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 2%),#000 calc(var(--sweep) + 22%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 2%),#000 calc(var(--sweep) + 22%))}
-  .face-cover .bs6{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 9%),#000 calc(var(--sweep) + 29%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 9%),#000 calc(var(--sweep) + 29%))}
-  .face-cover .bs7{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 16%),#000 calc(var(--sweep) + 36%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 16%),#000 calc(var(--sweep) + 36%))}
-  .face-cover .bs8{-webkit-mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 23%),#000 calc(var(--sweep) + 43%));mask-image:linear-gradient(to right,transparent calc(var(--sweep) + 23%),#000 calc(var(--sweep) + 43%))}
-
-  /* the panel: soft to the left of the ramp, sharp to the right */
-  .face-inner .bs1{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 26%),transparent calc(var(--sweep) + 46%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 26%),transparent calc(var(--sweep) + 46%))}
-  .face-inner .bs2{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 19%),transparent calc(var(--sweep) + 39%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 19%),transparent calc(var(--sweep) + 39%))}
-  .face-inner .bs3{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 12%),transparent calc(var(--sweep) + 32%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 12%),transparent calc(var(--sweep) + 32%))}
-  .face-inner .bs4{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 5%),transparent calc(var(--sweep) + 25%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) + 5%),transparent calc(var(--sweep) + 25%))}
-  .face-inner .bs5{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 2%),transparent calc(var(--sweep) + 18%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 2%),transparent calc(var(--sweep) + 18%))}
-  .face-inner .bs6{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 9%),transparent calc(var(--sweep) + 11%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 9%),transparent calc(var(--sweep) + 11%))}
-  .face-inner .bs7{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 16%),transparent calc(var(--sweep) + 4%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 16%),transparent calc(var(--sweep) + 4%))}
-  .face-inner .bs8{-webkit-mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 23%),transparent calc(var(--sweep) - 3%));mask-image:linear-gradient(to right,#000 calc(var(--sweep) - 23%),transparent calc(var(--sweep) - 3%))}
-
-  @keyframes sweepToLeft {from{opacity:1;--sweep:150%}to{opacity:1;--sweep:-60%}}
-  @keyframes sweepToRight{from{opacity:1;--sweep:-60%}to{opacity:1;--sweep:150%}}
-
-  /* Eight stacked backdrop filters is real GPU work. When motion is turned
-     down the ramp collapses to a single mid layer. */
-  @media (prefers-reduced-motion:reduce){
-    .bs1,.bs2,.bs3,.bs4,.bs6,.bs7,.bs8{display:none}
-  }
-
-  /* The two easings are the left and right halves of --ease-hinge, cut at its
-     midpoint and rescaled. Each sweep therefore tracks the actual hinge angle:
-     the cover is exactly full at 90deg, the panel exactly clear at 0deg. */
-
-  .duo.folding.opening .face-cover .blur-sweep{
-    animation:sweepToLeft calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.15,.45,.575,.725) 0ms both}
-  .duo.folding.opening .face-inner .blur-sweep{
-    animation:sweepToLeft calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.425,.275,.85,.55) calc(var(--fold-ms,1500ms) / 2) both}
-  .duo.folding.closing .face-inner .blur-sweep{
-    animation:sweepToRight calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.15,.45,.575,.725) 0ms both}
-  .duo.folding.closing .face-cover .blur-sweep{
-    animation:sweepToRight calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.425,.275,.85,.55) calc(var(--fold-ms,1500ms) / 2) both}
-
-  /* ---------- THE LIGHT GOING WITH IT ----------
-     Focus alone reads as a lens being adjusted. What makes a real screen look
-     like a screen is that it also gains and loses LIGHT as it turns: the cover
-     falls away to nothing as it swings past you, and the panel behind it comes
-     up out of the dark as it arrives.
-
-     So the dimmers ride the same clock as the blur, half for half, and on the
-     very same easings — which are the two halves of the hinge curve, cut at
-     its midpoint and rescaled. The light therefore tracks the hinge ANGLE
-     rather than the clock: the cover is spent exactly at 90deg, which is the
-     moment it turns edge-on, and the panel is at full exactly at 0deg.
-
-     The dimmer sits above the blur layers, so what is dimmed is the already
-     blurred image, not the thing being blurred. That is the right way round:
-     a dark screen is a dark screen whether or not it is in focus. */
-
-  @keyframes dimFall{from{opacity:0}   to{opacity:1}}      /* lit  -> out   */
-  @keyframes dimRise{from{opacity:.82} to{opacity:0}}      /* dim  -> lit   */
-  @keyframes dimSink{from{opacity:0}   to{opacity:.82}}    /* lit  -> dim   */
-  @keyframes dimWake{from{opacity:1}   to{opacity:0}}      /* out  -> lit   */
-
-  /* opening — part A the cover goes out, part B the panel comes up */
-  .duo.folding.opening #dimCover{
-    animation:dimFall calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.15,.45,.575,.725) 0ms both}
-  .duo.folding.opening #dimInner{
-    animation:dimRise calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.425,.275,.85,.55) calc(var(--fold-ms,1500ms) / 2) both}
-
-  /* closing — the same journey run backwards */
-  .duo.folding.closing #dimInner{
-    animation:dimSink calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.15,.45,.575,.725) 0ms both}
-  .duo.folding.closing #dimCover{
-    animation:dimWake calc(var(--fold-ms,1500ms) / 2) cubic-bezier(.425,.275,.85,.55) calc(var(--fold-ms,1500ms) / 2) both}
+  /* while the device turns, the chat's own animations hold still, so the
+     graphics chip only has to turn finished pictures */
+  .is-folding .leaf-r .app *{animation-play-state:paused!important}
 
   /* the dimmer is now only the power state: dark before the cover wakes, and
      dark again once the device has closed for the last time. Switching on is
@@ -792,6 +583,7 @@ button,input{font:inherit;color:inherit}
     opacity:1;
     transition:opacity 900ms var(--ease-fold);
   }
+
   .pane-dim.lit{opacity:0}
 
   /* The right half of the sheet is the same paper as the left. */
@@ -1417,6 +1209,7 @@ body.viewing{overflow:hidden}
 
     <!-- RIGHT LEAF — fixed. The chat, exactly as it is on a phone. -->
     <div class="leaf leaf-r">
+      <div class="plate pr" aria-hidden="true"></div>
       <div class="face face-inner">
 <div class="app">
 
@@ -1473,6 +1266,8 @@ body.viewing{overflow:hidden}
          two halves coplanar, this one paints on top. Both are absolutely
          positioned, so source order changes nothing about where they sit. -->
     <div class="leaf leaf-l" id="leafL">
+      <div class="plate p2" aria-hidden="true"></div>
+      <div class="plate p1" aria-hidden="true"></div>
 
       <section class="face face-inner" aria-label="Submission briefing">
         <div class="screen">
@@ -1520,7 +1315,7 @@ body.viewing{overflow:hidden}
 
           </div>
         </div>
-        <div class="blur-sweep bs1" aria-hidden="true"></div><div class="blur-sweep bs2" aria-hidden="true"></div><div class="blur-sweep bs3" aria-hidden="true"></div><div class="blur-sweep bs4" aria-hidden="true"></div><div class="blur-sweep bs5" aria-hidden="true"></div><div class="blur-sweep bs6" aria-hidden="true"></div><div class="blur-sweep bs7" aria-hidden="true"></div><div class="blur-sweep bs8" aria-hidden="true"></div>
+        <div class="fsg" aria-hidden="true"></div><div class="fsd" aria-hidden="true"></div>
         <div class="pane-dim" id="dimInner"></div>
       </section>
 
@@ -1560,18 +1355,17 @@ body.viewing{overflow:hidden}
           <span class="say">Salamat po</span>
         </div>
 
-        <div class="blur-sweep bs1" aria-hidden="true"></div><div class="blur-sweep bs2" aria-hidden="true"></div><div class="blur-sweep bs3" aria-hidden="true"></div><div class="blur-sweep bs4" aria-hidden="true"></div><div class="blur-sweep bs5" aria-hidden="true"></div><div class="blur-sweep bs6" aria-hidden="true"></div><div class="blur-sweep bs7" aria-hidden="true"></div><div class="blur-sweep bs8" aria-hidden="true"></div>
+        <div class="fsg" aria-hidden="true"></div><div class="fsd" aria-hidden="true"></div>
         <div class="pane-dim" id="dimCover"></div>
       </section>
 
-      <!-- the back plate of the slab: gives the cover a rim, and the metal
-           band around the free edge (built in script) something to join -->
-      <div class="plate-back" aria-hidden="true"></div>
 
     </div>
 
   </div>
 </div>
+<!-- the polished edge of the device, drawn with WebGL over it -->
+<canvas id="edge" aria-hidden="true"></canvas>
 
 <!-- full-screen look at the submission receipt, with a download that works on
      both desktop (anchor) and iOS (share sheet, falls back to a new tab) -->
@@ -4449,13 +4243,15 @@ function loadReferenceData(){
   },()=>{S.heavyReady=true;},1);
 }
 
+window.addEventListener('load',()=>{if(Edge)Edge.kick(1200);});
+
 /* DOMContentLoaded, not load: `load` waits for the two CDN scripts and the
    Google Fonts stylesheet, which on a cold start left the screen dark and
    doing nothing for well over a second before the intro even began. Nothing
    in the intro needs those — the reference data and the fonts arrive on their
    own schedule and the page is already drawing by then. */
 document.addEventListener('DOMContentLoaded',async()=>{
-  buildRim();
+  if(duoLive()){Edge=makeEdge();Edge.kick(1500);}
   loadReferenceData();
   initScrollAnchor();
   /* on a desktop the device opens first and the desk speaks once the panel
@@ -4481,7 +4277,7 @@ const DUO={
      the browser zoomed out to 75%. Raise it to show less, lower to show more;
      0.00140 is the ceiling, past which the agree prompt starts to scroll. */
   chatK:0.00124,
-  foldMs:3000,              /* the unfold itself */
+  foldMs:2000,              /* the unfold itself */
   wakeMs:700,               /* the screen coming up out of black */
   textMs:2300,             /* only a fallback now; the real figure is measured */              /* header, card and type arriving on the lit screen */
   holdMs:300,               /* the beat between the type settling and the fold */               /* a beat to read it before the phone unfolds */
@@ -4513,142 +4309,345 @@ function lessMotion(){
      the corners   where that edge turns C1 — the same half-round swept round
                    the quarter-circle of the outline, i.e. a quarter of a torus
 
-   The corner used to be a single flat band the full thickness, square at both
-   arrises. Against a side that had been rounded over it left a step you could
-   see straight into. Sweeping the side's own profile round the arc closes it:
-   the two meet tangentially because they are the same curve.
+   The edges, bezels, blur and brightness of the fold follow the ESS device:
+   a WebGL-drawn polished edge, black glass frames round each screen, and a
+   hinge turned by script so everything is set from its exact angle. */
+/* ==========================================================================
+   THE FOLD  ·  hinge, blur, brightness and the polished edge
+   --------------------------------------------------------------------------
+   Taken from the ESS device. The hinge is turned by script one frame at a
+   time (no CSS transition), and on that same frame the edge is redrawn and
+   the blur and darkness are set from the exact hinge angle, so none of them
+   can drift from the fold. Per frame only transforms and opacities change,
+   which the graphics chip handles on its own: that is what keeps it smooth.
 
-   Everything is written in terms of --r-out and --thick, so the whole rim
-   follows the device whenever it is resized. */
-function buildRim(){
-  const leaf=document.getElementById('leafL');
-  if(!leaf||leaf.dataset.rim)return;
-  leaf.dataset.rim='1';
+   h is the hinge angle: 0 = shut, 180 = open.
+   ========================================================================== */
+let curH=0,foldRaf=0,Edge=null;
 
-  /* ---- THE PROFILE, once ----
-     A single flat strip meets the screen at a hard 90° arris, which reads as
-     a cut rather than a machined edge. So the edge is a fan of narrow facets
-     following a half-round of radius --thick/2: it leaves the front face
-     tangentially, swells to the outline at mid-depth, and comes back to the
-     cover plane behind. Nine facets is enough that the shading reads as a
-     continuous curve rather than a chain of flats.
-
-     The round is carved INTO the slab, not bolted onto it: the arc's widest
-     point lands exactly on the leaf's own outline and the two faces step back
-     inward from there. Centred on the outline instead, the fan stood half a
-     thickness proud of the body and, seen flat, read as a bar floating
-     outside the phone.
-
-     Each facet sits on the chord of its segment, so its centre is pulled in
-     by cos(half-step) — without that the fan would stand proud of the true
-     profile at every joint. Light falls off as a facet turns away from the
-     front, and each is shaded from its leading edge to its trailing edge
-     rather than filled flat, so brightness is continuous across every joint:
-     filled flat, the fan reads as a row of raised buttons. */
-  const SIDE_N=9,sStep=Math.PI/SIDE_N,sMid=Math.cos(sStep/2);
-  const fw=Math.sin(sStep/2);                   /* chord across the profile, in --thick */
-  /* THE SURFACE, SAMPLED ACROSS THE WHOLE PROFILE — never repeated inside a
-     facet. Two things had to change for the fan to stop reading as a row of
-     buttons:
-
-       the ramp is evaluated at each facet's own two edges, so neighbours
-       share a colour at every joint instead of each replaying the full
-       dark-light-dark sweep inside its own couple of pixels;
-
-       and the specular highlight is mixed INTO that colour rather than laid
-       over it as a translucent sheet. Facets overlap by half a pixel so no
-       hairline can open between them, and a translucent sheet painted twice
-       on that overlap put a bright line down every joint — the sawtooth was
-       as much those seams as the ramp. Opaque, the overlap is invisible:
-       both facets carry the same colour where they meet. */
-  const lum=t=>0.02+0.30*Math.max(0,Math.cos(t-0.55));
-  const RAMP=[[0,[10,13,18]],[0.45,[43,49,58]],[1,[23,27,33]]];
-  const shade=(u,a,kBase,kLit)=>{
-    u=Math.max(0,Math.min(1,u));
-    let i=0;while(i<RAMP.length-2&&u>RAMP[i+1][0])i++;
-    const p0=RAMP[i][0],c0=RAMP[i][1],p1=RAMP[i+1][0],c1=RAMP[i+1][1];
-    const f=(u-p0)/(p1-p0||1);
-    const al=Math.max(0,Math.min(1,lum(a)*(kLit===undefined?1:kLit)));
-    return 'rgb('+c0.map((v,j)=>{
-      const base=(v+(c1[j]-v)*f)*(kBase===undefined?1:kBase);
-      return Math.round(base*(1-al)+255*al);
-    }).join(',')+')';
+/* the hinge's easing: breaks away, crawls evenly through the middle, then
+   accelerates into the stop (same curve as before) */
+function cubicBezier(x1,y1,x2,y2){
+  const cx=3*x1,bx=3*(x2-x1)-cx,ax=1-cx-bx,cy=3*y1,by=3*(y2-y1)-cy,ay=1-cy-by;
+  const X=t=>((ax*t+bx)*t+cx)*t,Y=t=>((ay*t+by)*t+cy)*t,dX=t=>(3*ax*t+2*bx)*t+cx;
+  return x=>{
+    if(x<=0)return 0;if(x>=1)return 1;
+    let t=x;for(let k=0;k<8;k++){const e=X(t)-x,d=dX(t);if(Math.abs(e)<1e-6||Math.abs(d)<1e-6)break;t-=e/d;}
+    if(!(t>=0&&t<=1)){let lo=0,hi=1;t=x;for(let k=0;k<30;k++){if(X(t)<x)lo=t;else hi=t;t=(lo+hi)/2;}}
+    return Y(t);
   };
+}
+const HINGE=cubicBezier(.15,.45,.85,.55);
 
-  const prof=[];
-  for(let i=0;i<SIDE_N;i++){
-    const a=(i+.5)*sStep;                       /* 0 = facing you, PI = facing away */
-    prof.push({
-      a:a,
-      deg:(-a*180/Math.PI).toFixed(2),
-      cx:0.5-0.5*sMid*Math.sin(a),              /* inward from the outline, in --thick */
-      cz:-0.5*(1-sMid*Math.cos(a)),             /* depth, in --thick */
-      a0:a-sStep/2, a1:a+sStep/2,               /* its leading and trailing edge */
-      mid:(i===((SIDE_N-1)>>1))                 /* the facet the gloss runs along */
-    });
+function setHinge(h){
+  curH=h;
+  const d=$('duo'),leaf=$('leafL'),sh=document.querySelector('.duo-shadow');
+  if(!d||!leaf)return;
+  const p=h/180;
+  d.style.transform='translateX('+(-25*(1-p)).toFixed(3)+'%)';
+  leaf.style.transform='translateZ('+(h<.5?'2px':'.1px')+') rotateY('+(180-h).toFixed(3)+'deg)';
+  if(sh)sh.style.transform='translateZ(-60px) scaleX('+(.5+.5*p).toFixed(4)+')';
+  if(Edge)Edge.draw();                 /* same frame as the turn, so the edge never lags */
+}
+
+/* Turns the hinge to `target` over DUO.foldMs and resolves when it lands. */
+function foldTo(target,instant){
+  cancelAnimationFrame(foldRaf);foldRaf=0;
+  const de=document.documentElement;
+  if(instant||lessMotion()){
+    FS.end();de.classList.remove('is-folding');setHinge(target);
+    if(Edge)Edge.draw(true);
+    return Promise.resolve();
   }
-  const px=n=>n.toFixed(4);
-  /* How far each tile is grown past its true chord. Every tile is composited
-     on its own layer (backface-visibility does that), so where two meet the
-     renderer blends their antialiased edges instead of resolving them by
-     depth — too small a lap and the dark body shows through as a hairline at
-     every joint. Measured across both pixel densities, 0.6px over nine
-     facets reads smoothest; tightening it or widening the facets to cut the
-     number of joints both came out worse. */
-  const LAP=0.6;
-  const lap=(n)=>(n>=0?' + ':' - ')+Math.abs(n).toFixed(3)+'px';
-  /* the leading and trailing colour of one facet */
-  const skinOf=(p,kBase,kLit)=>
-    ';--met-a:'+shade(p.a0/Math.PI,p.a0,kBase,kLit)+
-    ';--met-b:'+shade(p.a1/Math.PI,p.a1,kBase,kLit);
-  let html='';
-
-  /* ---- D1 x D2: the straight run of the free edge ---- */
-  prof.forEach(p=>{
-    html+='<i class="ws ws-side'+(p.mid?' ws-main':'')+'"'+
-      ' style="width:calc(var(--thick) * '+px(fw)+lap(LAP)+')'+
-      ';transform:translate3d(calc(var(--thick) * '+px(p.cx-fw/2)+')'+
-        ',0,calc(var(--thick) * '+px(p.cz)+')) rotateY('+p.deg+'deg)'+
-      skinOf(p)+'"></i>';
+  const from=curH;
+  FS.begin();de.classList.add('is-folding');
+  return new Promise(resolve=>{
+    let t0=0,prevT=0;const dts=[];
+    const step=now=>{
+      if(!t0)t0=now;                   /* the clock starts on the first painted frame, so nothing is skipped */
+      /* if the first frames come slowly, drop the lightest blur copy so the fold stays fluid */
+      if(prevT&&dts.length<10){dts.push(now-prevT);if(dts.length===10){const m=dts.slice().sort((a,b)=>a-b)[5];if(m>24)FS.setLite(true);}}
+      prevT=now;
+      const k=Math.min(1,(now-t0)/DUO.foldMs),h=from+(target-from)*HINGE(k);
+      setHinge(h);FS.paint(h);
+      if(k<1){foldRaf=requestAnimationFrame(step);return;}
+      foldRaf=0;de.classList.remove('is-folding');FS.end();
+      if(Edge)Edge.draw(true);         /* final picture once the device has landed */
+      resolve();
+    };
+    foldRaf=requestAnimationFrame(step);
   });
+}
 
-  /* ---- that same edge carried round C1 ----
-     Swept round the outline the profile traces a torus, so the surface is
-     tiled in both directions at once: ARC_N steps round the corner, SIDE_N
-     across the profile. A patch bounded by two arc angles and two profile
-     angles is planar — its two long edges are chords of circles on the same
-     axis, hence parallel — so a plain rotated rectangle sits on it exactly.
+/* ---------- blur and brightness of the turning screen ----------
+   a = how far a screen has turned away from lying flat, 0..90 degrees.
+     cover   a = h         (bright when shut, completely dark at 90°)
+     panel   a = 180 - h   (dark at 90°, full brightness at 180°)
+   The curves are the ESS device's, measured along the outer edge; brightness
+   is re-scaled so that 90° is fully black. The hinge side stays a little
+   brighter than the outer edge on the way, and reaches black at 90° too. */
+const FS=(()=>{
+  const TX=[0,5,10,20,30,40,50,60,70,80,90];
+  const BRIGHT=[100,94,88,76,58,42,32,25,19,16,15];   /* % */
+  const BLUR=[0,3,6,16,30,47,67,86,100,100,100];      /* % of TOP */
+  const LV=[.55,1.4,3.0],TOP=3.0;                     /* blur of each copy, in hundredths of the device height */
+  const cl=n=>Math.max(0,Math.min(1,n));
+  const at=(arr,x)=>{if(x<=TX[0])return arr[0];for(let j=1;j<TX.length;j++)if(x<=TX[j]){const f=(x-TX[j-1])/(TX[j]-TX[j-1]);return arr[j-1]+(arr[j]-arr[j-1])*f;}return arr[arr.length-1];};
+  let F=null,on=false,lite=false,u=1,last=-1;
+  const face=sel=>{
+    const f=document.querySelector(sel);
+    return f&&{f,scr:f.querySelector(':scope>.screen'),g:f.querySelector(':scope>.fsg'),d:f.querySelector(':scope>.fsd'),lv:null,pairs:[],sign:null};
+  };
+  const faces=()=>F||(F=[face('.leaf-l .face-cover'),face('.leaf-l .face-inner')].filter(Boolean));
 
-     At arc angle t the profile has shrunk the corner radius by its own inward
-     offset, which is what keeps the two surfaces tangent where they meet at
-     t = 0. Each tile is placed by its centre and then turned twice: rotateZ
-     swings the outward direction round the corner, rotateY tilts it along the
-     profile — the very same tilt the straight run uses. */
-  const ARC_N=5,tStep=(Math.PI/2)/ARC_N,tMid=Math.cos(tStep/2);
-  const K=Math.sin(tStep/2);                    /* half the arc chord, per unit radius */
-  for(let j=0;j<ARC_N;j++){
-    const t=(j+.5)*tStep, deg=(t*180/Math.PI).toFixed(2);
-    const A=tMid*Math.cos(t), P=tMid*Math.sin(t)+K;
-    /* No falloff round the bend. A per-tile dim factor is constant over the
-       whole tile, so consecutive tiles step against each other and the corner
-       gets ring-banded — the same fault as the ramp, turned ninety degrees.
-       A gradient cannot run along both the profile and the arc at once, so
-       the corner carries the side's own shading unchanged and the curve is
-       left to read from its silhouette, which is what actually sells it. */
-    prof.forEach(p=>{
-      const box=
-        'left:calc(var(--r-out) * '+px(1-A)+' + var(--thick) * '+px(p.cx*A-fw/2)+lap(-LAP/2)+')'+
-        ';width:calc(var(--thick) * '+px(fw)+lap(LAP)+')'+
-        ';height:calc(var(--r-out) * '+px(2*K)+' - var(--thick) * '+px(p.cx*2*K)+lap(LAP)+')';
-      const edge='calc(var(--r-out) * '+px(1-P)+' + var(--thick) * '+px(p.cx*P)+lap(-LAP/2)+')';
-      const skin=
-        ';transform:translateZ(calc(var(--thick) * '+px(p.cz)+')) rotateZ(%Sdeg) rotateY('+p.deg+'deg)'+
-        skinOf(p)+'"></i>';
-      html+='<i class="ws ws-arc" style="'+box+';top:'   +edge+skin.replace('%S', deg);
-      html+='<i class="ws ws-arc" style="'+box+';bottom:'+edge+skin.replace('%S','-'+deg);
+  /* the blurred copies start their own animations from zero; line them up
+     with the originals so nothing replays inside the blur */
+  function syncAnims(o,c){
+    if(!o.getAnimations||!c.getAnimations)return;
+    const idx=r=>{const m=new Map();m.set(r,0);r.querySelectorAll('*').forEach((e,k)=>m.set(e,k+1));return m;};
+    const key=(m,a)=>{const e=a.effect;return a.animationName&&e&&e.target&&m.has(e.target)?m.get(e.target)+'|'+(e.pseudoElement||'')+'|'+a.animationName:null;};
+    const om=idx(o),cm=idx(c),src=new Map();
+    o.getAnimations({subtree:true}).forEach(a=>{const k=key(om,a);if(k)src.set(k,a);});
+    c.getAnimations({subtree:true}).forEach(a=>{const k=key(cm,a),s=k&&src.get(k);if(s&&s.currentTime!=null){try{a.currentTime=s.currentTime;}catch(_){}}});
+  }
+  function copyCanvases(S){
+    S.pairs.forEach(([s,d])=>{if(!s.width||!s.height)return;
+      if(d.width!==s.width||d.height!==s.height){d.width=s.width;d.height=s.height;}
+      const c=d.__c||(d.__c=d.getContext('2d'));c.clearRect(0,0,d.width,d.height);try{c.drawImage(s,0,0);}catch(_){}});
+  }
+  function build(S){
+    if(S.lv||S.sign||!S.scr||!S.g)return;
+    /* the closing card covers the whole cover: blur the card itself instead */
+    const sg=S.f.querySelector(':scope>.cover-sign.show');
+    if(sg){S.sign=sg;return;}
+    S.lv=LV.map((r,i)=>{
+      const w=document.createElement('div');
+      w.className='fsb l'+i;w.setAttribute('aria-hidden','true');w.inert=true;
+      w.style.filter='blur('+(r*u).toFixed(2)+'px)';
+      w.appendChild(S.scr.cloneNode(true));
+      S.g.before(w);
+      return w;
+    });
+    const src=[...S.scr.querySelectorAll('canvas')];S.pairs=[];
+    S.lv.forEach(w=>{const dst=[...w.querySelectorAll('canvas')];src.forEach((s,k)=>{if(dst[k])S.pairs.push([s,dst[k]]);});syncAnims(S.scr,w.firstChild);});
+    copyCanvases(S);
+  }
+  function teardown(S){
+    S.g.style.opacity='';S.d.style.opacity='';
+    if(S.lv){S.lv.forEach(w=>w.remove());S.lv=null;}
+    S.pairs=[];
+    if(S.sign){S.sign.style.filter='';S.sign=null;}
+  }
+  function paint(S,a){
+    a=Math.max(0,Math.min(90,a));
+    const bo=cl((at(BRIGHT,a)/100-.15)/.85);      /* outer edge: ESS curve, black at 90° */
+    const bh=Math.pow(bo,.55);                     /* hinge side: a little brighter on the way */
+    S.d.style.opacity=(1-bh).toFixed(3);
+    S.g.style.opacity=(bh>.001?cl(1-bo/bh):0).toFixed(3);
+    const r=at(BLUR,a)/100*TOP;
+    if(S.sign){S.sign.style.filter=r>.05?'blur('+(r*.6*u).toFixed(2)+'px)':'';return;}
+    if(!S.lv)return;
+    S.lv.forEach((w,i)=>{
+      const lo=i?LV[i-1]:0;
+      w.style.opacity=(lite&&i===0)?'0':cl((r-lo)/(LV[i]-lo)).toFixed(3);
     });
   }
-  leaf.insertAdjacentHTML('beforeend',html);
+  return{
+    /* build the blurred copies while nothing is moving, so the first frames of the fold are not delayed */
+    prep(){
+      if(lessMotion()||!DUO.on)return Promise.resolve();
+      u=($('duo').offsetHeight||100)/100;faces().forEach(build);
+      return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    },
+    begin(){
+      if(lessMotion()||!DUO.on)return;
+      u=($('duo').offsetHeight||100)/100;
+      faces().forEach(build);on=true;last=-1;
+    },
+    paint(h){
+      if(!on||Math.abs(h-last)<.01)return;last=h;
+      const [cover,inner]=faces();
+      if(cover)paint(cover,h);
+      if(inner)paint(inner,180-h);
+    },
+    setLite(v){lite=!!v;},
+    end(){on=false;last=-1;lite=false;faces().forEach(teardown);}
+  };
+})();
+
+/* ---------- the polished edge (from the ESS device) ---------- */
+function makeEdge(){
+  const cvs=$('edge'),duo=$('duo'),leafL=$('leafL'),stageEl=$('stage');
+  const G={T:2.8,D:1.15,R:6.2,r:1.0,BZ:1.406,ANT:8.6,ANTW:.55};   /* in u: thickness, curve reach, corners, black border, antenna lines */
+  const GLASS=0,JOINT=1,STEEL=2,ANTENNA=3,RAD=Math.PI/180;
+  const BANDS=[[0,26,6,GLASS],[26,32,1,JOINT],[32,148,30,STEEL],[148,154,1,JOINT],[154,180,6,GLASS]];
+  let gl=null,LOC={},BUFS=[],NB=0,NI=0,U=1,H=0,Ww=0,sizeKey='',lastKey='',till=0,raf=0;
+  const norm3=(x,y,z)=>{const l=Math.hypot(x,y,z)||1;return[x/l,y/l,z/l];};
+  function P(o,m,a){const t=a*RAD,ins=G.D*U*(1-Math.sin(t));return[o[0]-m[0]*ins,o[1]-m[1]*ins,-(G.T*U/2)*(1-Math.cos(t))];}
+  function N(m,a){const t=a*RAD,k=Math.sin(t)/G.D;return norm3(m[0]*k,m[1]*k,Math.cos(t)/(G.T/2));}
+  /* outline runs; f: 0 always, 1 hidden when resting open, 2 only when resting open */
+  function runs(turning){
+    const R=G.R*U,r=G.r*U,BZ=G.BZ*U,out=[],front=turning?[0,180]:[0,110];
+    const line=(p0,p1,m,a,mat,f)=>out.push({st:[{o:p0,m},{o:p1,m}],a,mat,f:f||0});
+    const arc=(cx,cy,rad,f0,f1,K,a,f)=>{const st=[];for(let j=0;j<=K;j++){const g=(f0+(f1-f0)*j/K)*RAD,m=[Math.cos(g),Math.sin(g)];st.push({o:[cx+rad*m[0],cy+rad*m[1]],m});}out.push({st,a,f:f||0});};
+    const y1=G.ANT*U,y2=H-G.ANT*U,aw=G.ANTW*U/2,L=[-1,0];
+    if(turning){
+      line([0,R],[0,y1-aw],L,front);line([0,y1-aw],[0,y1+aw],L,front,ANTENNA);
+      line([0,y1+aw],[0,y2-aw],L,front);line([0,y2-aw],[0,y2+aw],L,front,ANTENNA);line([0,y2+aw],[0,H-R],L,front);
+    }else line([0,R],[0,H-R],L,front);
+    arc(R,R,R,180,270,32,front);
+    line([R,0],[Ww-r,0],[0,-1],front);
+    arc(Ww-r,r,r,270,360,8,front,1);
+    line([Ww,r],[Ww,BZ],[1,0],[0,90],null,1);line([Ww,H-BZ],[Ww,H-r],[1,0],[0,90],null,1);
+    if(turning)line([Ww,r],[Ww,H-r],[1,0],[90,180],null,1);
+    arc(Ww-r,H-r,r,0,90,8,front,1);
+    line([Ww-r,H],[R,H],[0,1],front);
+    arc(R,H-R,R,90,180,32,front);
+    if(!turning){
+      out.forEach(s=>s.st.forEach(p=>{p.o=[Ww-p.o[0],p.o[1]];p.m=[-p.m[0],p.m[1]];}));
+      const e=r+.6;line([-e,0],[e,0],[0,-1],front,null,2);line([-e,H],[e,H],[0,1],front,null,2);
+    }
+    return out;
+  }
+  function mesh(){
+    const pos=[],nor=[],mat=[],wing=[],flag=[],idx=[];
+    const add=(p,n,mt,w,f)=>{pos.push(p[0],p[1],p[2]);nor.push(n[0],n[1],n[2]);mat.push(mt);wing.push(w);flag.push(f||0);return pos.length/3-1;};
+    /* blockers (depth only, never drawn): the faces hide any edge behind them, since the HTML screens sit under this canvas */
+    const rr=(z,w,hingeIn)=>{
+      const D=G.D*U+.6,ro=G.R*U-G.D*U,ri=Math.max(0,G.r*U-G.D*U),hx=Ww-hingeIn,pts=[];
+      [[D+ro,D+ro,ro,180,270],[hx-ri,D+ri,ri,270,360],[hx-ri,H-D-ri,ri,0,90],[D+ro,H-D-ro,ro,90,180]].forEach(([cx,cy,rad,f0,f1])=>{
+        for(let j=0;j<=10;j++){const f=(f0+(f1-f0)*j/10)*RAD;pts.push([cx+rad*Math.cos(f),cy+rad*Math.sin(f)]);}});
+      const mx=x=>w?Ww-x:x,c=add([mx(Ww/2),H/2,z],[0,0,1],-1,w),first=pos.length/3;
+      pts.forEach(p=>add([mx(p[0]),p[1],z],[0,0,1],-1,w));
+      for(let k=0;k<pts.length;k++)idx.push(c,first+k,first+(k+1)%pts.length);
+    };
+    rr(0,0,G.D*U+.6);rr(-G.T*U,0,G.D*U+.6);rr(0,1,0);
+    const nBlock=idx.length;
+    [true,false].forEach(turning=>{
+      runs(turning).forEach(run=>{
+        BANDS.forEach(([b0,b1,n,m0])=>{
+          const a0=Math.max(b0,run.a[0]),a1=Math.min(b1,run.a[1]);if(a1<=a0)return;
+          const k=Math.max(1,Math.round(n*(a1-a0)/(b1-b0))),mt=(run.mat===ANTENNA&&m0===STEEL)?ANTENNA:m0;
+          const base=pos.length/3,S=run.st.length;
+          for(let j=0;j<S;j++)for(let q=0;q<=k;q++){const a=a0+(a1-a0)*q/k,s=run.st[j];add(P(s.o,s.m,a),N(s.m,a),mt,turning?0:1,run.f);}
+          const v=(j,q)=>base+j*(k+1)+q;
+          /* every triangle faces outwards, so the back of the edge is never drawn */
+          const jm=S>2?Math.floor(S/2)-1:0,qm=Math.floor(k/2),A=v(jm,qm),B=v(jm+1,qm),C=v(jm+1,qm+1);
+          const e1=[pos[B*3]-pos[A*3],pos[B*3+1]-pos[A*3+1],pos[B*3+2]-pos[A*3+2]],e2=[pos[C*3]-pos[A*3],pos[C*3+1]-pos[A*3+1],pos[C*3+2]-pos[A*3+2]];
+          const cr=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]];
+          const flip=cr[0]*nor[A*3]+cr[1]*nor[A*3+1]+cr[2]*nor[A*3+2]<0;
+          for(let j=0;j<S-1;j++)for(let q=0;q<k;q++){const a=v(j,q),b=v(j+1,q),c=v(j+1,q+1),d=v(j,q+1);if(flip)idx.push(a,c,b,a,d,c);else idx.push(a,b,c,a,c,d);}
+        });
+      });
+    });
+    return{pos,nor,mat,wing,flag,idx,nBlock};
+  }
+  const VS=`
+attribute vec3 aP;attribute vec3 aN;attribute float aM;attribute float aW;attribute float aF;
+uniform mat4 uW1,uW2,uP;uniform float uOpen;
+varying vec3 vN;varying vec3 vPos;varying float vM;
+void main(){
+  vN=vec3(0.,0.,1.);vPos=vec3(0.);vM=0.;
+  if((aF>.5&&aF<1.5&&uOpen>.5)||(aF>1.5&&uOpen<.5)){gl_Position=vec4(2.,2.,2.,1.);return;}
+  vec4 w=aW<.5?uW1*vec4(aP,1.):uW2*vec4(aP,1.);
+  vec4 n=aW<.5?uW1*vec4(aN,0.):uW2*vec4(aN,0.);
+  vPos=w.xyz;vN=n.xyz;vM=aM;
+  gl_Position=uP*w;
+}`;
+  const FS=`
+precision highp float;
+varying vec3 vN;varying vec3 vPos;varying float vM;uniform vec3 uEye;
+float g2(float dy,float dp,float sy,float sp){return exp(-(dy*dy)/(2.*sy*sy)-(dp*dp)/(2.*sp*sp));}
+float env(vec3 R){
+  float yaw=degrees(atan(R.x,R.z)),pitch=degrees(asin(clamp(-R.y,-1.,1.)));
+  float E=.05,ay=abs(yaw);
+  E+=.08*g2(yaw,pitch,34.,40.);
+  E+=.85*smoothstep(110.,135.,ay)*(1.-smoothstep(56.,66.,abs(pitch)));
+  E+=.95*g2(ay-96.,pitch-4.,5.5,38.);
+  E+=.90*g2(yaw+56.,pitch-14.,10.,24.);
+  E+=.60*g2(yaw-70.,pitch-8.,13.,28.);
+  E+=1.0*smoothstep(82.,88.,pitch)+.7*smoothstep(-82.,-88.,pitch);
+  E+=.55*smoothstep(30.,75.,pitch)*(1.-smoothstep(60.,140.,ay));
+  E+=.30*smoothstep(-30.,-80.,pitch)*(1.-.5*smoothstep(60.,140.,ay));
+  return min(E,1.);
+}
+void main(){
+  vec3 N=normalize(vN),V=normalize(uEye-vPos);
+  float c=max(dot(N,V),0.);
+  vec3 R=2.*c*N-V;float E=env(R);vec3 col;
+  if(vM<.5){float f=.045+.955*pow(1.-c,5.);col=vec3(.95,.97,1.)*(.012+(.10+.9*f)*E*.85);}
+  else if(vM<1.5)col=vec3(.018,.018,.02);
+  else if(vM<2.5)col=vec3(.92,.945,1.)*(.03+.84*pow(E,1.15));
+  else col=vec3(.62,.63,.65)*(.62+.28*c+.12*max(0.,-N.y));
+  gl_FragColor=vec4(col,1.);
+}`;
+  function init(){
+    try{gl=cvs.getContext('webgl',{antialias:true,alpha:true,premultipliedAlpha:true,depth:true});}catch(_){gl=null;}
+    if(!gl)return false;
+    try{
+      const sh=(t,src)=>{const o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o;};
+      const pg=gl.createProgram();gl.attachShader(pg,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pg,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pg);
+      if(!gl.getProgramParameter(pg,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pg));
+      gl.useProgram(pg);
+      ['aP','aN','aM','aW','aF'].forEach(k=>LOC[k]=gl.getAttribLocation(pg,k));
+      ['uW1','uW2','uP','uOpen','uEye'].forEach(k=>LOC[k]=gl.getUniformLocation(pg,k));
+    }catch(e){console.warn('Edge drawing is off:',e);gl=null;return false;}
+    sizeKey='';lastKey='';return true;
+  }
+  function upload(){
+    BUFS.forEach(b=>gl.deleteBuffer(b));BUFS=[];
+    const m=mesh(),buf=(data,loc,size)=>{const b=gl.createBuffer();BUFS.push(b);gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);};
+    buf(m.pos,LOC.aP,3);buf(m.nor,LOC.aN,3);buf(m.mat,LOC.aM,1);buf(m.wing,LOC.aW,1);buf(m.flag,LOC.aF,1);
+    const ib=gl.createBuffer();BUFS.push(ib);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+    const big=m.pos.length/3>65535;if(big)gl.getExtension('OES_element_index_uint');
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,big?new Uint32Array(m.idx):new Uint16Array(m.idx),gl.STATIC_DRAW);
+    LOC.it=big?gl.UNSIGNED_INT:gl.UNSIGNED_SHORT;NB=m.nBlock;NI=m.idx.length;
+  }
+  /* an element's own transform about its transform-origin */
+  function own(el){
+    const cs=getComputedStyle(el),t=cs.transform;
+    if(!t||t==='none')return new DOMMatrix();
+    const o=cs.transformOrigin.split(' ').map(parseFloat);
+    return new DOMMatrix().translate(o[0]||0,o[1]||0,o[2]||0).multiply(new DOMMatrix(t)).translate(-(o[0]||0),-(o[1]||0),-(o[2]||0));
+  }
+  function draw(force){
+    if(!gl||!DUO.on)return;
+    const dcs=getComputedStyle(duo),dw=parseFloat(dcs.width),dh=parseFloat(dcs.height);
+    if(!dw||!dh)return;
+    const sk=dw.toFixed(2)+'x'+dh.toFixed(2);
+    if(sk!==sizeKey){sizeKey=sk;H=dh;Ww=dw/2;U=dh/100;upload();lastKey='';}
+    const vw=innerWidth,vh=innerHeight,dpr=Math.min(window.devicePixelRatio||1,2.5),cw=Math.round(vw*dpr),ch=Math.round(vh*dpr);
+    if(cvs.width!==cw||cvs.height!==ch){cvs.width=cw;cvs.height=ch;lastKey='';}
+    /* the same chain the browser uses: body perspective ← stage (camera) ← device slide ← wing turn */
+    const bs=getComputedStyle(document.body),d=parseFloat(bs.perspective)||100000,po=bs.perspectiveOrigin.split(' ').map(parseFloat);
+    const scs=getComputedStyle(stageEl),sw=parseFloat(scs.width),shh=parseFloat(scs.height);
+    const base=new DOMMatrix().translate(stageEl.offsetLeft,stageEl.offsetTop).multiply(own(stageEl)).translate((sw-dw)/2,(shh-dh)/2).multiply(own(duo));
+    const w1=base.multiply(own(leafL)),w2=base.translate(dw/2,0);
+    const persp=new DOMMatrix().translate(po[0],po[1]).multiply(new DOMMatrix([1,0,0,0,0,1,0,0,0,0,1,-1/d,0,0,0,1])).translate(-po[0],-po[1]);
+    const toClip=new DOMMatrix([2/vw,0,0,0,0,-2/vh,0,0,0,0,-1/3000,0,-1,1,0,1]).multiply(persp);
+    const open=curH>=179.95;                     /* resting open: the bridge closes the notch at the hinge */
+    const A=w1.toFloat32Array(),B=w2.toFloat32Array(),C=toClip.toFloat32Array();
+    const key=Array.from(A).concat(Array.from(B),Array.from(C)).map(n=>n.toFixed(4)).join(',')+open+cw+'x'+ch;
+    if(!force&&key===lastKey)return;lastKey=key;
+    gl.viewport(0,0,cw,ch);
+    gl.uniformMatrix4fv(LOC.uW1,false,A);gl.uniformMatrix4fv(LOC.uW2,false,B);gl.uniformMatrix4fv(LOC.uP,false,C);
+    gl.uniform1f(LOC.uOpen,open?1:0);gl.uniform3f(LOC.uEye,po[0],po[1],d);
+    gl.clearColor(0,0,0,0);gl.clearDepth(1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.CULL_FACE);gl.colorMask(false,false,false,false);
+    gl.drawElements(gl.TRIANGLES,NB,LOC.it,0);
+    gl.colorMask(true,true,true,true);gl.enable(gl.CULL_FACE);gl.frontFace(gl.CW);gl.cullFace(gl.BACK);
+    gl.drawElements(gl.TRIANGLES,NI-NB,LOC.it,NB*(LOC.it===gl.UNSIGNED_INT?4:2));
+  }
+  function loop(){raf=0;draw();if(performance.now()<till)raf=requestAnimationFrame(loop);}
+  if(!init())document.documentElement.classList.add('nogl');
+  cvs.addEventListener('webglcontextlost',e=>e.preventDefault());
+  cvs.addEventListener('webglcontextrestored',()=>{if(init())draw(true);});
+  return{
+    draw,
+    /* keep redrawing for a while: used while the camera or layout is moving by itself (CSS transitions) */
+    kick(ms){if(!gl)return;till=Math.max(till,performance.now()+(ms||600));if(!raf)raf=requestAnimationFrame(loop);}
+  };
 }
 
 /* ---------- sizing ----------
@@ -4674,50 +4673,18 @@ function sizeDuo(){
 }
 
 /* ---------- the two resting states ---------- */
-/* The fold is marked while it is actually turning, and in which direction.
-   The travelling blur is keyed off this: it needs to peak mid-swing, which a
-   transition cannot express on its own. */
-let foldTimer=null;
-function markFolding(dir,instant){
-  const d=$('duo');
-  if(!d)return;
-  d.classList.remove('folding','opening','closing');
-  if(instant)return;
-  void d.offsetWidth;                      /* restart the animations cleanly */
-  d.classList.add('folding',dir);
-  clearTimeout(foldTimer);
-  foldTimer=setTimeout(()=>d.classList.remove('folding','opening','closing'),DUO.foldMs+60);
-}
-
+/* Both return a promise that settles when the hinge lands. */
 function duoFolded(instant){
-  if(instant)rootStyle.setProperty('--fold-ms','0ms');
-  markFolding('closing',instant);
-  rootStyle.setProperty('--fold','180deg');
-  $('duo').classList.add('shut');          /* the rail closes all four corners */
-  rootStyle.setProperty('--duo-shift','-25%');
-  rootStyle.setProperty('--seam','0');
-  /* nothing to dim: the fold is carried by focus now, and both screens stay
-     lit. The dimmer is only the power state, set by the intro and the outro. */
-  const sh=document.querySelector('.duo-shadow');
-  css(sh,'--sh-left','50%');css(sh,'--sh-right','0%');
+  const d=$('duo');
+  if(d)d.classList.add('shut');
   DUO.open=false;
-  if(instant){
-    /* commit the zero-length state before the real duration comes back, otherwise
-       the rail's corners are animated from their opened shape to their shut one */
-    void $('duo').offsetWidth;
-    rootStyle.setProperty('--fold-ms',DUO.foldMs+'ms');
-  }
+  return foldTo(0,instant);
 }
-function duoOpen(){
-  markFolding('opening');
-  rootStyle.setProperty('--fold','0deg');
-  $('duo').classList.remove('shut');       /* and opens up at the hinge */
-  rootStyle.setProperty('--duo-shift','0%');
-  rootStyle.setProperty('--seam','1');
-  /* likewise: opening pulls focus, it does not change brightness */
-  const sh=document.querySelector('.duo-shadow');
-  css(sh,'--sh-left','0%');css(sh,'--sh-right','0%');
+function duoOpen(instant){
+  const d=$('duo');
+  if(d)d.classList.remove('shut');
   DUO.open=true;
+  return foldTo(180,instant);
 }
 
 /* ---------- opening ----------
@@ -4773,9 +4740,10 @@ async function duoIntro(){
   await wait(coverTypeSettled(cover));
   await wait(DUO.holdMs);
 
-  /* 4 · and the phone unfolds */
-  duoOpen();
-  await wait(DUO.foldMs);
+  /* 4 · and the phone unfolds (the blurred copies are made first, while
+         nothing is moving, so the first frames of the fold are not held up) */
+  await FS.prep();
+  await duoOpen();
 }
 
 /* ---------- closing ----------
@@ -4785,8 +4753,9 @@ async function duoOutro(){
   if(!DUO.on||!DUO.open)return;
   $('coverSign').classList.add('show');   /* both marks, centred */
   await wait(250);
-  duoFolded();                            /* the panel hands back to the cover */
-  await wait(DUO.foldMs+1100);            /* and the cover is held long enough to read */
+  await FS.prep();
+  await duoFolded();                      /* the panel hands back to the cover */
+  await wait(1100);                       /* and the cover is held long enough to read */
   screenOn('dimCover',false);             /* then the screen goes out */
   await wait(DUO.foldMs);
   stopClock();
@@ -4998,14 +4967,14 @@ window.addEventListener('resize',()=>{
          panels would open onto black */
       screenOn('dimCover',true);screenOn('dimInner',true);
       document.querySelector('.face-cover').classList.add('awake');
-      rootStyle.setProperty('--fold-ms','0ms');
-      duoOpen();
-      void $('duo').offsetWidth;
-      rootStyle.setProperty('--fold-ms',DUO.foldMs+'ms');
+      if(!Edge)Edge=makeEdge();
+      duoOpen(true);
+      Edge.kick(800);
     }else if(!live&&DUO.on){      /* shrank to a phone: the frame steps aside */
       DUO.on=false;stopClock();
     }else if(live){
       sizeDuo();
+      if(Edge)Edge.kick(800);
     }
   },150);
 });
@@ -5014,7 +4983,9 @@ window.addEventListener('resize',()=>{
 window.__okb={S,handleFiles,startUpload,askWhatNext,identify,pickRegion,
               drawReceipt,receiptBubble,openViewer,prepareForUpload,
               DUO,duoIntro,duoOutro,duoOpen,duoFolded,sizeDuo,
-              panelPhotos,panelWaterway,panelReset,signOff,buildRim,RV,fitAll};
+              panelPhotos,panelWaterway,panelReset,signOff,RV,fitAll,foldTo,
+              hinge:()=>curH,edgeOn:()=>!document.documentElement.classList.contains('nogl'),
+              pose:h=>{FS.begin();setHinge(h);FS.paint(h);},unpose:()=>{FS.end();}};
 
 })();
 </script>
